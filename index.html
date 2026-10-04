@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>🇪🇸 AI 西班牙文單字學習站</title>
+<style>
+:root{--bg:#f6f7fb;--card:#fff;--text:#202124;--muted:#68707d;--accent:#7c5cff;--ok:#16a34a;--bad:#dc2626}
+*{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Noto Sans TC",sans-serif;background:var(--bg);color:var(--text)}
+header{background:linear-gradient(135deg,#ffcf70,#ff8aa8,#8e8bff);padding:28px 18px;color:#fff;text-align:center}
+header h1{margin:0 0 8px;font-size:28px}header p{margin:0;opacity:.95}
+main{max-width:1050px;margin:22px auto;padding:0 16px}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.stat,.panel,.card{background:var(--card);border-radius:18px;box-shadow:0 6px 24px #0000000d}
+.stat{padding:16px}.stat b{font-size:24px;display:block}.muted{color:var(--muted);font-size:13px}
+.panel{padding:18px;margin-top:16px}.toolbar{display:flex;gap:10px;flex-wrap:wrap}
+button,input,select{font:inherit;border-radius:12px;border:1px solid #ddd;padding:10px 12px}button{cursor:pointer;border:0;background:var(--accent);color:#fff;font-weight:700}button.secondary{background:#ececf5;color:#333}button.danger{background:#dc2626}
+input{background:#fff;min-width:180px;flex:1}
+.card-wrap{perspective:1000px;max-width:600px;margin:18px auto}.flashcard{min-height:280px;position:relative;transform-style:preserve-3d;transition:.5s;cursor:pointer}.flashcard.flip{transform:rotateY(180deg)}
+.face{position:absolute;inset:0;backface-visibility:hidden;background:#fff;border-radius:22px;padding:35px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;box-shadow:0 10px 35px #00000014}
+.back{transform:rotateY(180deg)}.word{font-size:42px;font-weight:800}.meaning{font-size:28px}.example{margin-top:18px;line-height:1.6}.controls{display:flex;justify-content:center;gap:10px;flex-wrap:wrap}
+.list{display:grid;gap:8px;margin-top:14px}.item{display:flex;gap:8px;align-items:center;padding:12px;background:#fafafa;border-radius:12px}.item .es{font-weight:800;min-width:140px}.item .zh{flex:1}.item button{padding:7px 10px}
+.hidden{display:none!important}.tag{display:inline-block;padding:4px 8px;border-radius:999px;background:#eee;font-size:12px;margin:2px}
+@media(max-width:750px){.grid{grid-template-columns:repeat(2,1fr)}.word{font-size:32px}.item{flex-wrap:wrap}.item .zh{min-width:150px}}
+</style>
+</head>
+<body>
+<header><h1>🇪🇸 AI 西班牙文單字學習站</h1><p>每天由 AI 產生 10～20 個新單字，並自動避免重複</p></header>
+<main>
+<section class="grid">
+<div class="stat"><span class="muted">總單字</span><b id="total">0</b></div>
+<div class="stat"><span class="muted">已學會</span><b id="known">0</b></div>
+<div class="stat"><span class="muted">學習進度</span><b id="progress">0%</b></div>
+<div class="stat"><span class="muted">今日新增</span><b id="today">0</b></div>
+</section>
+
+<section class="panel">
+<div class="toolbar">
+<button onclick="generateToday()">🤖 AI 產生今日 10～20 字</button>
+<button class="secondary" onclick="showMode('study')">🃏 單字卡</button>
+<button class="secondary" onclick="showMode('quiz')">🧠 測驗</button>
+<button class="secondary" onclick="showMode('manage')">✏️ 管理單字</button>
+</div>
+<p id="status" class="muted">第一次使用請按「AI 產生今日 10～20 字」，並先在後端設定 API Key。</p>
+</section>
+
+<section id="study" class="panel">
+<h2>🃏 單字卡</h2>
+<div class="toolbar"><input id="search" placeholder="搜尋西文或中文…" oninput="renderStudy()"><select id="category" onchange="renderStudy()"><option value="">全部分類</option></select></div>
+<div class="card-wrap">
+<div id="flashcard" class="flashcard" onclick="flipCard()">
+<div class="face front"><div class="word" id="frontWord">—</div><div class="muted">點一下翻面</div></div>
+<div class="face back"><div class="meaning" id="backMeaning">—</div><div class="example" id="backExample">—</div></div>
+</div></div>
+<div class="controls">
+<button class="secondary" onclick="prevCard()">← 上一個</button><button onclick="speakCurrent()">🔊 發音</button><button onclick="markKnown()">✓ 我會了</button><button class="danger" onclick="markUnknown()">× 再複習</button><button class="secondary" onclick="nextCard()">下一個 →</button>
+</div>
+</section>
+
+<section id="quiz" class="panel hidden">
+<h2>🧠 測驗模式</h2>
+<p id="quizQ">按「開始測驗」</p><div id="quizOptions" class="toolbar"></div><p id="quizResult"></p>
+<button onclick="newQuiz()">開始／下一題</button>
+</section>
+
+<section id="manage" class="panel hidden">
+<h2>✏️ 單字管理</h2>
+<div class="toolbar"><input id="newEs" placeholder="西班牙文"><input id="newZh" placeholder="繁體中文"><input id="newEx" placeholder="例句（可空白）"><button onclick="addWord()">新增</button></div>
+<div id="wordList" class="list"></div>
+</section>
+</main>
+<script>
+let words=JSON.parse(localStorage.getItem('esWords')||'[]');
+let known=new Set(JSON.parse(localStorage.getItem('esKnown')||'[]'));
+let idx=0, quizWord=null;
+
+function save(){localStorage.setItem('esWords',JSON.stringify(words));localStorage.setItem('esKnown',JSON.stringify([...known]));updateStats();}
+function updateStats(){
+ document.getElementById('total').textContent=words.length;
+ document.getElementById('known').textContent=known.size;
+ document.getElementById('progress').textContent=(words.length?Math.round(known.size/words.length*100):0)+'%';
+ const today=new Date().toISOString().slice(0,10);
+ document.getElementById('today').textContent=words.filter(w=>w.addedDate===today).length;
+}
+function categories(){let c=[...new Set(words.map(w=>w.category||'其他'))];category.innerHTML='<option value="">全部分類</option>'+c.map(x=>`<option>${esc(x)}</option>`).join('')}
+function filtered(){let q=(search.value||'').toLowerCase(),c=category.value;return words.filter(w=>(!q||w.es.toLowerCase().includes(q)||w.zh.includes(q))&&(!c||(w.category||'其他')===c))}
+function renderStudy(){categories();let a=filtered();if(!a.length){frontWord.textContent='—';backMeaning.textContent='沒有單字';backExample.textContent='先產生或新增單字';return} if(idx>=a.length)idx=0;let w=a[idx];frontWord.textContent=w.es;backMeaning.textContent=w.zh;backExample.textContent=w.example||'';flashcard.classList.remove('flip')}
+function flipCard(){flashcard.classList.toggle('flip')}
+function current(){let a=filtered();return a[idx]}
+function nextCard(){let a=filtered();if(a.length){idx=(idx+1)%a.length;renderStudy()}}
+function prevCard(){let a=filtered();if(a.length){idx=(idx-1+a.length)%a.length;renderStudy()}}
+function speakCurrent(){let w=current();if(w){let u=new SpeechSynthesisUtterance(w.es);u.lang='es-ES';speechSynthesis.speak(u)}}
+function markKnown(){let w=current();if(w){known.add(w.id);save();nextCard()}}
+function markUnknown(){let w=current();if(w){known.delete(w.id);save();nextCard()}}
+function showMode(id){['study','quiz','manage'].forEach(x=>document.getElementById(x).classList.toggle('hidden',x!==id));if(id==='manage')renderList();if(id==='study')renderStudy()}
+async function generateToday(){
+ status.textContent='AI 正在產生今天的新單字…';
+ try{
+  let r=await fetch('/api/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({existing:words.map(w=>w.es)})});
+  let d=await r.json(); if(!r.ok) throw new Error(d.error||'生成失敗');
+  let existing=new Set(words.map(w=>w.es.toLowerCase()));
+  let fresh=d.words.filter(w=>w.es&&w.zh&&!existing.has(w.es.toLowerCase())).map(w=>({...w,id:crypto.randomUUID(),addedDate:new Date().toISOString().slice(0,10)}));
+  words.push(...fresh);save();renderStudy();status.textContent=`今天新增 ${fresh.length} 個 AI 單字！`;
+ }catch(e){status.textContent='無法連線到 AI：'+e.message}
+}
+function addWord(){let es=newEs.value.trim(),zh=newZh.value.trim(),ex=newEx.value.trim();if(!es||!zh)return alert('請輸入西文與中文');if(words.some(w=>w.es.toLowerCase()===es.toLowerCase()))return alert('這個單字已存在');words.push({id:crypto.randomUUID(),es,zh,example:ex,category:'自訂',addedDate:new Date().toISOString().slice(0,10)});save();newEs.value=newZh.value=newEx.value='';renderList();renderStudy()}
+function renderList(){wordList.innerHTML=words.slice().reverse().map(w=>`<div class="item"><span class="es">${esc(w.es)}</span><span class="zh">${esc(w.zh)}<br><small>${esc(w.example||'')}</small></span><button onclick="editWord('${w.id}')">修改</button><button class="danger" onclick="delWord('${w.id}')">刪除</button></div>`).join('')}
+function editWord(id){let w=words.find(x=>x.id===id);if(!w)return;let es=prompt('西班牙文',w.es),zh=prompt('繁體中文',w.zh),ex=prompt('例句',w.example||'');if(es===null||zh===null)return;if(words.some(x=>x.id!==id&&x.es.toLowerCase()===es.trim().toLowerCase()))return alert('單字重複');w.es=es.trim();w.zh=zh.trim();w.example=ex||'';save();renderList();renderStudy()}
+function delWord(id){if(!confirm('確定刪除這個單字？'))return;words=words.filter(w=>w.id!==id);known.delete(id);save();renderList();renderStudy()}
+function newQuiz(){if(words.length<4)return alert('至少需要 4 個單字');quizWord=words[Math.floor(Math.random()*words.length)];let opts=[quizWord,...words.filter(w=>w.id!==quizWord.id).sort(()=>Math.random()-.5).slice(0,3)].sort(()=>Math.random()-.5);quizQ.textContent=`「${quizWord.es}」的中文意思是？`;quizResult.textContent='';quizOptions.innerHTML=opts.map(w=>`<button class="secondary" onclick="answerQuiz('${w.id}')">${esc(w.zh)}</button>`).join('')}
+function answerQuiz(id){quizResult.textContent=id===quizWord.id?'✅ 答對了！':'❌ 再想想：'+quizWord.zh;if(id===quizWord.id){known.add(quizWord.id);save()}}
+function esc(s){return String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
+updateStats();renderStudy();
+</script>
+</body></html>
